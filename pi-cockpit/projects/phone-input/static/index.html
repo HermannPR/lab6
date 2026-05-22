@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Pi · Claude</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; touch-action: none; user-select: none; }
+:root {
+  --bg: #020804; --bg2: #010602; --bg3: #0a1a0a;
+  --g: #00e060; --gd: #00a040; --gk: #003010; --gx: #0a2010;
+  --gold: #fd0; --red: #e94560; --blue: #4af; --border: #0a2010;
+  --term-fs: 12px;
+}
+body { background: var(--bg); color: #eee; font-family: system-ui, sans-serif; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+
+/* HEADER */
+#hdr { display: flex; align-items: center; gap: 7px; padding: 7px 10px; background: var(--bg2); border-bottom: 1px solid var(--border); flex-shrink: 0; padding-top: max(7px, env(safe-area-inset-top)); }
+#hdr-info { flex: 1; display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; }
+#hdr-dot { width: 8px; height: 8px; border-radius: 50%; background: #1a3a1a; flex-shrink: 0; transition: background .3s; }
+#hdr-dot.thinking { background: var(--g); animation: pulse .9s ease-in-out infinite; }
+#hdr-dot.options  { background: var(--gold); animation: pulse .5s ease-in-out infinite; }
+#hdr-dot.dead     { background: #f44; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+#hdr-label { font-family: 'Courier New', monospace; font-size: 11px; color: #1a4a1a; letter-spacing: .8px; font-weight: 700; white-space: nowrap; }
+.hbtn { padding: 5px 8px; border-radius: 5px; font-size: 10px; font-weight: 700; font-family: 'Courier New', monospace; cursor: pointer; touch-action: manipulation; border: 1px solid var(--border); background: var(--bg3); color: #334; letter-spacing: .3px; white-space: nowrap; flex-shrink: 0; }
+.hbtn:active { background: var(--gk); color: var(--g); }
+.hbtn.on { color: var(--g); border-color: #00e06050; background: #001a08; }
+.hbtn.snd { color: #0af; border-color: #0af4; background: #001418; }
+
+/* VOLUME POPUP */
+#vol-pop { position: absolute; top: 0; right: 0; z-index: 300; background: var(--bg2); border: 1px solid var(--gd); border-radius: 6px; padding: 10px 12px; display: none; flex-direction: column; align-items: center; gap: 8px; min-width: 44px; }
+#vol-pop.show { display: flex; }
+#vol-pop-wrap { position: fixed; top: 0; left: 0; right: 0; z-index: 290; display: none; }
+#vol-pop-wrap.show { display: block; }
+#vol-slider { writing-mode: vertical-lr; direction: rtl; -webkit-appearance: slider-vertical; width: 28px; height: 100px; cursor: pointer; touch-action: manipulation; accent-color: var(--g); }
+#vol-label { font-size: 9px; color: var(--gd); font-family: 'Courier New', monospace; }
+
+/* TERMINAL */
+#term-wrap { flex: 1; position: relative; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+#term { flex: 1; overflow-y: auto; padding: 8px 10px; font-family: 'Courier New', monospace; font-size: var(--term-fs); line-height: 1.6; color: var(--g); white-space: pre-wrap; word-break: break-all; background: var(--bg); touch-action: pan-y; user-select: text; -webkit-overflow-scrolling: touch; }
+#term::after { content: ''; position: sticky; top: 0; left: 0; width: 100%; height: 100%; display: block; margin-top: -100%; background: repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.14) 3px,rgba(0,0,0,.14) 4px); pointer-events: none; }
+.lp { color: #fff; font-weight: bold; }
+.lt { color: var(--blue); }
+.lr { color: #28a; }
+.lk { color: #6f6; font-style: italic; opacity: .8; }
+.lo { color: var(--gold); font-weight: bold; }
+.lx { color: var(--g); }
+.ld { color: #2a6a3a; }
+
+/* scroll + font btns overlay */
+#term-btns { position: absolute; right: 5px; display: flex; flex-direction: column; gap: 3px; z-index: 5; bottom: 5px; }
+.t-btn { width: 24px; height: 24px; border-radius: 3px; background: #00e06012; border: 1px solid #00e06035; color: var(--g); font-size: 12px; display: flex; align-items: center; justify-content: center; cursor: pointer; touch-action: manipulation; opacity: 0; transition: opacity .2s; }
+.t-btn.show { opacity: 1; }
+#scroll-dn { font-size: 11px; }
+#scroll-up { font-size: 11px; }
+#fs-up, #fs-dn { font-size: 9px; font-weight: 700; font-family: 'Courier New', monospace; opacity: 1; }
+
+/* MODE BAR */
+#mode-bar { padding: 3px 10px; font-size: 10px; font-weight: 700; font-family: 'Courier New', monospace; letter-spacing: 1px; flex-shrink: 0; text-align: center; border-top: 1px solid var(--border); }
+.mi { background: var(--bg2); color: #0a2a10; }
+.mt { background: #011004; color: var(--g); animation: bt 1.2s step-end infinite; }
+.mo { background: #141000; color: var(--gold); animation: bo .8s step-end infinite; }
+.my { background: #140004; color: #f44; animation: bo .6s step-end infinite; }
+.md { background: #100000; color: #f44; }
+@keyframes bt { 50%{color:#003a18} } @keyframes bo { 50%{opacity:.3} }
+
+/* OPTIONS */
+#opts { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 8px; flex-shrink: 0; background: var(--bg2); border-top: 1px solid var(--border); }
+.ob { flex: 1; min-width: 54px; padding: 9px 3px; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer; touch-action: manipulation; text-align: center; font-family: 'Courier New', monospace; }
+.ob.num { background: var(--bg); color: var(--g); border: 1px solid #00e06035; }
+.ob.num:active { background: #00e06018; }
+.ob.yes { background: #021004; color: #0f0; border: 1px solid #0f03; }
+.ob.no  { background: #100202; color: #f44; border: 1px solid #f443; }
+
+/* INPUT */
+#inp-row { display: flex; gap: 4px; padding: 5px 8px; flex-shrink: 0; background: var(--bg2); border-top: 1px solid var(--border); touch-action: auto; }
+#ci { flex: 1; background: var(--bg); border: 1px solid #00e06028; border-radius: 3px; color: var(--g); font-size: 14px; padding: 7px 8px; outline: none; font-family: 'Courier New', monospace; touch-action: auto; user-select: text; caret-color: var(--g); min-width: 0; }
+#ci:focus { border-color: var(--g); box-shadow: 0 0 5px #00e06020; }
+#ci::placeholder { color: #0a2a10; }
+#ci-paste { width: 34px; height: 36px; border-radius: 3px; flex-shrink: 0; background: var(--bg); border: 1px solid #00e06020; color: #006a30; font-size: 13px; cursor: pointer; touch-action: manipulation; display: flex; align-items: center; justify-content: center; }
+#ci-paste:active { background: #00e06015; color: var(--g); }
+#ci-send { width: 40px; height: 36px; border-radius: 3px; flex-shrink: 0; background: #00e06015; border: 1px solid var(--gd); color: var(--g); font-size: 17px; font-family: 'Courier New', monospace; cursor: pointer; touch-action: manipulation; display: flex; align-items: center; justify-content: center; }
+#ci-send:active { background: var(--g); color: #000; }
+
+/* ACTION STRIP */
+#acts { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px 8px 5px; flex-shrink: 0; background: var(--bg2); }
+.ab { flex: 1; min-width: 44px; padding: 6px 2px; border-radius: 3px; background: var(--bg); border: 1px solid #00e06018; color: #007a35; font-size: 9px; font-weight: 700; font-family: 'Courier New', monospace; text-align: center; cursor: pointer; touch-action: manipulation; white-space: nowrap; }
+.ab:active { background: #00e06015; color: var(--g); border-color: var(--gd); }
+.ab.k { color: #0a4a20; border-color: #0a1a08; }
+/* RST: hold to fire */
+.ab.rst { color: #553; border-color: #332; background: #0a0800; transition: color .15s, border-color .15s, background .15s; }
+.ab.rst.armed { color: #f44; border-color: #f443; background: #1a0101; }
+
+/* TOOL BAR */
+#tbar { display: flex; background: #010301; border-top: 1px solid var(--border); flex-shrink: 0; padding-bottom: max(4px, env(safe-area-inset-bottom)); }
+.tb { flex: 1; padding: 9px 0; text-align: center; font-size: 9px; font-weight: 700; letter-spacing: .3px; color: #1a3a1a; cursor: pointer; touch-action: manipulation; font-family: 'Courier New', monospace; }
+.tb.open { color: var(--gd); border-top: 2px solid var(--gd); padding-top: 7px; }
+
+/* DRAWER */
+#bd { position: fixed; inset: 0; z-index: 99; background: rgba(0,0,0,.55); display: none; }
+#bd.show { display: block; }
+.drawer { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; background: #030e03; border-top: 1px solid var(--gd); transform: translateY(100%); transition: transform .18s ease; display: flex; flex-direction: column; max-height: 72dvh; }
+.drawer.open { transform: translateY(0); }
+.dh { text-align: center; padding: 7px; color: var(--gd); font-size: 10px; font-family: 'Courier New', monospace; font-weight: 700; letter-spacing: 1px; flex-shrink: 0; cursor: pointer; touch-action: manipulation; border-bottom: 1px solid var(--border); user-select: none; }
+.db { flex: 1; overflow-y: auto; min-height: 0; }
+
+/* TOUCH drawer */
+#tp { flex: 1; min-height: 160px; background: #010e01; position: relative; touch-action: none; }
+#tp-hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #0a2010; font-size: 11px; text-align: center; pointer-events: none; line-height: 1.8; font-family: 'Courier New', monospace; }
+#mbtns { display: flex; gap: 1px; background: var(--border); flex-shrink: 0; }
+.mb { flex: 1; padding: 13px 0; text-align: center; background: var(--bg2); font-size: 12px; font-weight: 700; color: #334; cursor: pointer; touch-action: manipulation; font-family: 'Courier New', monospace; }
+.mb:active { background: var(--gk); color: var(--g); }
+
+/* KEYS drawer */
+#kbdpan { background: #010e01; padding: 4px 3px 6px; touch-action: auto; }
+.kr { display: flex; gap: 2px; justify-content: center; margin-bottom: 2px; }
+.key { height: 36px; min-width: 22px; padding: 0 2px; background: #030f03; border: 1px solid var(--border); border-radius: 4px; color: #888; font-size: 11px; font-weight: 500; display: flex; align-items: center; justify-content: center; cursor: pointer; flex: 1; max-width: 40px; touch-action: manipulation; }
+.key.af { background: var(--gk); color: var(--g); }
+.key.held { background: #0a1a2a; color: #7eb8ff; border-color: #1a3a6a; }
+.key.wide { max-width: 62px; flex: 1.5; }
+.key.xwide { max-width: 130px; flex: 3; }
+.key.mod { color: #5a8; background: #020e02; }
+.key.sym { color: #8a8; font-size: 10px; }
+
+/* PROMPT drawer */
+#dpb { padding: 10px; display: flex; flex-direction: column; gap: 9px; touch-action: auto; }
+#pi { flex: 1; min-height: 90px; background: var(--bg); border: 1px solid #00e06025; border-radius: 6px; color: var(--g); font-size: 14px; line-height: 1.5; padding: 9px; resize: none; outline: none; touch-action: auto; user-select: text; font-family: 'Courier New', monospace; caret-color: var(--g); }
+#pi:focus { border-color: var(--gd); }
+#pi::placeholder { color: #0a2a10; }
+#pa { display: flex; gap: 7px; flex-shrink: 0; }
+#pcl { width: 50px; height: 50px; border-radius: 6px; background: var(--bg2); border: 1px solid var(--border); color: #333; font-size: 18px; cursor: pointer; touch-action: manipulation; display: flex; align-items: center; justify-content: center; }
+#pcl:active { color: #f44; }
+#psnd { flex: 1; height: 50px; border-radius: 6px; background: var(--gd); border: none; color: #000; font-size: 14px; font-weight: 800; cursor: pointer; touch-action: manipulation; display: flex; align-items: center; justify-content: center; font-family: 'Courier New', monospace; }
+#psnd:active { background: #006a30; }
+#pst { font-size: 10px; color: #334; text-align: center; }
+
+/* YT drawer */
+#ytb { padding: 12px; display: flex; flex-direction: column; gap: 10px; touch-action: auto; }
+#yt-open { padding: 13px; border-radius: 6px; background: #c4302b; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; touch-action: manipulation; text-align: center; }
+#yt-open:active { background: #a02020; }
+#ytur { display: flex; gap: 7px; }
+#ytu { flex: 1; background: var(--bg); border: 1px solid #00e06022; border-radius: 6px; color: var(--g); font-size: 13px; padding: 9px; outline: none; touch-action: auto; user-select: text; font-family: 'Courier New', monospace; caret-color: var(--g); }
+#ytu:focus { border-color: #c4302b; }
+#ytu::placeholder { color: #0a2a10; }
+#yts { width: 46px; height: 42px; border-radius: 6px; background: #c4302b; border: none; color: #fff; font-size: 18px; cursor: pointer; touch-action: manipulation; display: flex; align-items: center; justify-content: center; }
+#yts:active { background: #a02020; }
+#ytcmds { display: flex; flex-wrap: wrap; gap: 5px; }
+.yc { flex: 1; min-width: 110px; padding: 10px 5px; border-radius: 5px; background: var(--bg); border: 1px solid #00e06018; color: #007a35; font-size: 10px; font-weight: 700; text-align: center; cursor: pointer; touch-action: manipulation; font-family: 'Courier New', monospace; }
+.yc:active { background: #c4302b18; color: #c4302b; border-color: #c4302b; }
+#ytst { font-size: 10px; color: #334; text-align: center; }
+
+/* SCREEN OVERLAY */
+#scr-wrap { position: fixed; inset: 0; z-index: 200; background: #000; display: none; flex-direction: column; }
+#scr-wrap.show { display: flex; }
+#scr-hdr { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: rgba(0,0,0,.85); border-bottom: 1px solid #111; flex-shrink: 0; }
+#scr-fps { font-size: 9px; color: #333; font-family: monospace; flex: 1; }
+.stb { padding: 4px 8px; border-radius: 3px; font-size: 9px; font-weight: 700; background: #111; border: 1px solid #222; color: #444; cursor: pointer; touch-action: manipulation; font-family: 'Courier New', monospace; }
+.stb.a { color: var(--red); border-color: var(--red); background: #1a0008; }
+.stb:active { background: #222; }
+#scr-close { padding: 4px 10px; border-radius: 3px; font-size: 9px; font-weight: 700; background: #1a0004; border: 1px solid #f443; color: #f44; cursor: pointer; touch-action: manipulation; font-family: 'Courier New', monospace; }
+#scr-close:active { background: #400; }
+#scr-mid { flex: 1; position: relative; overflow: hidden; }
+#scr-img { width: 100%; height: 100%; object-fit: contain; display: block; cursor: crosshair; touch-action: none; user-select: none; }
+#scr-cur { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border: 2px solid var(--red); border-radius: 50%; box-shadow: 0 0 4px var(--red); display: none; pointer-events: none; }
+#scr-bot { display: flex; gap: 4px; padding: 4px 7px; background: rgba(0,0,0,.75); flex-shrink: 0; }
+.ssb { flex: 1; padding: 6px; border-radius: 3px; font-size: 10px; font-weight: 700; background: #111; border: 1px solid #222; color: #555; text-align: center; cursor: pointer; touch-action: manipulation; font-family: 'Courier New', monospace; }
+.ssb:active { background: #222; color: var(--red); }
+
+audio { display: none; }
+
+/* GIT DRAWER */
+#git-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.gtab { flex: 1; padding: 7px; text-align: center; font-size: 10px; font-weight: 700; font-family: 'Courier New', monospace; color: #1a3a1a; cursor: pointer; touch-action: manipulation; }
+.gtab.on { color: var(--g); border-bottom: 2px solid var(--g); }
+#git-status-bar { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--bg2); }
+#git-branch { font-family: 'Courier New', monospace; font-size: 10px; color: var(--gold); font-weight: 700; }
+#git-dirty { font-size: 9px; color: #444420; flex: 1; font-family: 'Courier New', monospace; }
+.git-act { padding: 4px 8px; border-radius: 3px; background: var(--bg); border: 1px solid #00e06028; color: #006a30; font-size: 9px; font-weight: 700; font-family: 'Courier New', monospace; cursor: pointer; touch-action: manipulation; }
+.git-act:active { background: #00e06015; color: var(--g); }
+#git-commits { overflow-y: auto; }
+.gc { padding: 8px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.gc:active { background: #0a1a0a; }
+.gc-head { display: flex; gap: 8px; margin-bottom: 2px; }
+.gc-hash { font-family: 'Courier New', monospace; font-size: 9px; color: var(--gd); font-weight: 700; }
+.gc-age  { font-size: 9px; color: #222240; font-family: 'Courier New', monospace; }
+.gc-msg  { font-size: 11px; color: #7a9a7a; font-family: 'Courier New', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gc-diff { font-size: 8px; color: #005a20; font-family: 'Courier New', monospace; white-space: pre-wrap; word-break: break-all; padding: 6px 10px; background: var(--bg2); border-top: 1px solid var(--border); margin: 4px -10px -8px; display: none; }
+.gc.open .gc-msg { color: var(--g); }
+.gc.open .gc-diff { display: block; }
+#git-md-view { display: none; flex-direction: column; flex: 1; min-height: 0; }
+#git-md-view.show { display: flex; }
+#md-actions { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--bg2); }
+#md-save { padding: 5px 14px; border-radius: 3px; background: var(--gd); color: #000; font-size: 10px; font-weight: 800; font-family: 'Courier New', monospace; cursor: pointer; touch-action: manipulation; }
+#md-save:active { background: #005a20; color: var(--g); }
+#md-status { font-size: 9px; color: #444420; font-family: 'Courier New', monospace; flex: 1; }
+#md-editor { flex: 1; background: var(--bg); border: none; color: var(--g); font-size: 10px; line-height: 1.5; padding: 8px 10px; outline: none; resize: none; font-family: 'Courier New', monospace; touch-action: auto; user-select: text; caret-color: var(--g); min-height: 180px; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="hdr">
+  <div id="hdr-info">
+    <div id="hdr-dot"></div>
+    <span id="hdr-label">CONNECTING</span>
+  </div>
+  <div class="hbtn" id="hbtn-scr" onclick="scrToggle()">📺 OFF</div>
+  <div class="hbtn" id="hbtn-snd" onclick="sndToggle()">🔇</div>
+</div>
+
+<!-- VOLUME POPUP -->
+<div id="vol-pop-wrap" onclick="volPopClose()">
+  <div id="vol-pop" onclick="event.stopPropagation()">
+    <span id="vol-label">80%</span>
+    <input id="vol-slider" type="range" min="0" max="100" value="80"
+      oninput="volChange(this.value)" ontouchend="volChange(this.value)">
+  </div>
+</div>
+
+<!-- TERMINAL -->
+<div id="term-wrap">
+  <div id="term"><span class="ld">Connecting to Claude…</span></div>
+  <div id="term-btns">
+    <div class="t-btn" id="fs-up"  onclick="fsChange(1)">A+</div>
+    <div class="t-btn" id="fs-dn"  onclick="fsChange(-1)">A-</div>
+    <div class="t-btn show" id="scroll-up" onclick="$('term').scrollTop=0">▲</div>
+    <div class="t-btn" id="scroll-dn" onclick="$('term').scrollTop=9e9">▼</div>
+  </div>
+</div>
+
+<!-- MODE BAR -->
+<div id="mode-bar" class="mi">[ IDLE ]</div>
+<div id="opts"></div>
+
+<!-- INPUT -->
+<div id="inp-row">
+  <input id="ci" type="text" placeholder="Type prompt…" autocomplete="off" autocorrect="off" autocapitalize="sentences"
+    onkeydown="if(event.key==='Enter'){send();event.preventDefault();}">
+  <div id="ci-paste" onclick="pasteClipboard()" title="Paste">📋</div>
+  <div id="ci-send" onclick="send()">↵</div>
+</div>
+
+<!-- ACTION STRIP -->
+<div id="acts">
+  <div class="ab k" onclick="choose('enter')">↵ ENT</div>
+  <div class="ab k" onclick="choose('esc')">⎋ ESC</div>
+  <div class="ab" onclick="send('continue')">▶ CONT</div>
+  <div class="ab" onclick="send('yes')">✓ YES</div>
+  <div class="ab" onclick="send('no')">✗ NO</div>
+  <div class="ab rst" id="rst-btn"
+    onpointerdown="rstArm()" onpointerup="rstCancel()" onpointerleave="rstCancel()">↺ RST</div>
+</div>
+
+<!-- TOOL BAR -->
+<div id="tbar">
+  <div class="tb" id="tbtn-touch"  onclick="drw('touch')">TOUCH</div>
+  <div class="tb" id="tbtn-keys"   onclick="drw('keys')">KEYS</div>
+  <div class="tb" id="tbtn-prompt" onclick="drw('prompt')">PROMPT</div>
+  <div class="tb" id="tbtn-yt"     onclick="drw('yt')">YT</div>
+  <div class="tb" id="tbtn-git"    onclick="drw('git')">GIT</div>
+</div>
+
+<div id="bd" onclick="closeDrw()"></div>
+
+<!-- TOUCH DRAWER -->
+<div class="drawer" id="d-touch">
+  <div class="dh">▼ TOUCH — swipe down to close</div>
+  <div class="db" style="display:flex;flex-direction:column;">
+    <div id="tp"><div id="tp-hint">Drag · move<br>Tap · click<br>2-finger · scroll / right-click</div></div>
+    <div id="mbtns">
+      <div class="mb" onpointerdown="mb('left','down')" onpointerup="mb('left','up')" onpointerleave="mb('left','up')">LEFT</div>
+      <div class="mb" onpointerdown="mb('right','down')" onpointerup="mb('right','up')" onpointerleave="mb('right','up')">RIGHT</div>
+    </div>
+  </div>
+</div>
+
+<!-- KEYS DRAWER -->
+<div class="drawer" id="d-keys">
+  <div class="dh">▼ KEYS — swipe down to close</div>
+  <div class="db"><div id="kbdpan">
+    <!-- Symbols row -->
+    <div class="kr">
+      <div class="key sym" data-char="~">~</div>
+      <div class="key sym" data-char="@">@</div>
+      <div class="key sym" data-char="#">#</div>
+      <div class="key sym" data-char="$">$</div>
+      <div class="key sym" data-char="%">%</div>
+      <div class="key sym" data-char="^">^</div>
+      <div class="key sym" data-char="&">&amp;</div>
+      <div class="key sym" data-char="*">*</div>
+      <div class="key sym" data-char="(">( </div>
+      <div class="key sym" data-char=")">)</div>
+      <div class="key sym" data-char="|">|</div>
+      <div class="key sym" data-char="!"  >!</div>
+      <div class="key sym" data-char="?"  >?</div>
+    </div>
+    <!-- Number row -->
+    <div class="kr">
+      <div class="key" data-key="esc">Esc</div>
+      <div class="key" data-key="1">1</div><div class="key" data-key="2">2</div><div class="key" data-key="3">3</div><div class="key" data-key="4">4</div><div class="key" data-key="5">5</div><div class="key" data-key="6">6</div><div class="key" data-key="7">7</div><div class="key" data-key="8">8</div><div class="key" data-key="9">9</div><div class="key" data-key="0">0</div>
+      <div class="key" data-key="-">-</div><div class="key" data-key="=">=</div><div class="key wide" data-key="backspace">⌫</div>
+    </div>
+    <div class="kr">
+      <div class="key wide" data-key="tab">Tab</div>
+      <div class="key" data-key="q">Q</div><div class="key" data-key="w">W</div><div class="key" data-key="e">E</div><div class="key" data-key="r">R</div><div class="key" data-key="t">T</div><div class="key" data-key="y">Y</div><div class="key" data-key="u">U</div><div class="key" data-key="i">I</div><div class="key" data-key="o">O</div><div class="key" data-key="p">P</div>
+      <div class="key" data-key="[">[</div><div class="key" data-key="]">]</div>
+    </div>
+    <div class="kr">
+      <div class="key" data-key="a">A</div><div class="key" data-key="s">S</div><div class="key" data-key="d">D</div><div class="key" data-key="f">F</div><div class="key" data-key="g">G</div><div class="key" data-key="h">H</div><div class="key" data-key="j">J</div><div class="key" data-key="k">K</div><div class="key" data-key="l">L</div>
+      <div class="key" data-key=";">;</div><div class="key" data-key="'">'</div><div class="key wide" data-key="enter">↵</div>
+    </div>
+    <div class="kr">
+      <div class="key wide mod" data-key="shift">⇧ Shift</div>
+      <div class="key" data-key="z">Z</div><div class="key" data-key="x">X</div><div class="key" data-key="c">C</div><div class="key" data-key="v">V</div><div class="key" data-key="b">B</div><div class="key" data-key="n">N</div><div class="key" data-key="m">M</div>
+      <div class="key" data-key=",">,</div><div class="key" data-key=".">.</div><div class="key" data-key="/">/</div><div class="key wide mod" data-key="shift">⇧</div>
+    </div>
+    <div class="kr">
+      <div class="key wide mod" data-key="ctrl">Ctrl</div><div class="key mod" data-key="alt">Alt</div>
+      <div class="key xwide" data-key=" ">SPACE</div>
+      <div class="key mod" data-key="home">⇱</div><div class="key mod" data-key="end">⇲</div><div class="key mod" data-key="delete">Del</div>
+    </div>
+    <div class="kr">
+      <div class="key wide mod" data-key="up">▲</div><div class="key wide mod" data-key="down">▼</div><div class="key wide mod" data-key="left">◀</div><div class="key wide mod" data-key="right">▶</div>
+    </div>
+  </div></div>
+</div>
+
+<!-- PROMPT DRAWER -->
+<div class="drawer" id="d-prompt">
+  <div class="dh">▼ PROMPT — swipe down to close</div>
+  <div class="db"><div id="dpb">
+    <textarea id="pi" placeholder="Type long prompt…" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="true"></textarea>
+    <div id="pa">
+      <div id="pcl" onclick="document.getElementById('pi').value='';document.getElementById('pst').textContent=''">✕</div>
+      <div id="psnd" onclick="sendFull()">SEND ↵</div>
+    </div>
+    <div id="pst"></div>
+  </div></div>
+</div>
+
+<!-- YT DRAWER -->
+<div class="drawer" id="d-yt">
+  <div class="dh">▼ YOUTUBE — swipe down to close</div>
+  <div class="db"><div id="ytb">
+    <div id="yt-open" onclick="window.open('https://youtube.com','_blank')">▶ OPEN YOUTUBE ↗</div>
+    <div id="ytur">
+      <input id="ytu" type="url" placeholder="Paste YouTube URL…" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
+        onkeydown="if(event.key==='Enter'){ytSend();event.preventDefault();}">
+      <div id="yts" onclick="ytSend()">↵</div>
+    </div>
+    <div id="ytcmds">
+      <div class="yc" onclick="ytCmd('yt-dlp \"{url}\"')">⬇ DOWNLOAD</div>
+      <div class="yc" onclick="ytCmd('yt-dlp -x --audio-format mp3 \"{url}\"')">♪ MP3</div>
+      <div class="yc" onclick="ytCmd('yt-dlp -F \"{url}\"')">≡ FORMATS</div>
+      <div class="yc" onclick="ytCmd('yt-dlp --get-title \"{url}\"')">i TITLE</div>
+    </div>
+    <div id="ytst"></div>
+  </div></div>
+</div>
+
+<!-- GIT DRAWER -->
+<div class="drawer" id="d-git">
+  <div class="dh">▼ GIT — swipe down to close</div>
+  <div id="git-tabs">
+    <div class="gtab on" id="gtab-log" onclick="gitTab('log')">LOG</div>
+    <div class="gtab"    id="gtab-md"  onclick="gitTab('md')">CLAUDE.MD</div>
+  </div>
+  <!-- LOG view -->
+  <div style="display:flex;flex-direction:column;flex:1;min-height:0;" id="git-log-view">
+    <div id="git-status-bar">
+      <span id="git-branch">…</span>
+      <span id="git-dirty"></span>
+      <div class="git-act" onclick="gitPull()">↓ PULL</div>
+      <div class="git-act" onclick="gitLoad()" style="padding:4px 6px;">↺</div>
+    </div>
+    <div class="db" id="git-commits"><div style="color:#1a3a1a;padding:12px;font-family:monospace;font-size:10px;">Tap GIT to load…</div></div>
+  </div>
+  <!-- CLAUDE.MD editor -->
+  <div id="git-md-view">
+    <div id="md-actions">
+      <div id="md-save" onclick="mdSave()">SAVE</div>
+      <span id="md-status"></span>
+      <div class="git-act" onclick="mdLoad()">↺ RELOAD</div>
+    </div>
+    <textarea id="md-editor" placeholder="Loading CLAUDE.md…"></textarea>
+  </div>
+</div>
+
+<!-- SCREEN OVERLAY -->
+<div id="scr-wrap">
+  <div id="scr-hdr">
+    <div id="scr-fps">-- fps</div>
+    <div class="stb a" id="sm-click" onclick="scrMode('click')">CLICK</div>
+    <div class="stb" id="sm-drag"   onclick="scrMode('drag')">DRAG</div>
+    <div class="stb" id="sm-right"  onclick="scrMode('right')">RIGHT</div>
+    <div id="scr-close" onclick="scrToggle()">✕ OFF</div>
+  </div>
+  <div id="scr-mid">
+    <img id="scr-img" alt="">
+    <div id="scr-cur"></div>
+  </div>
+  <div id="scr-bot">
+    <div class="ssb" onclick="scrScroll(3)">▲ SCROLL</div>
+    <div class="ssb" onclick="scrScroll(-3)">▼ SCROLL</div>
+  </div>
+</div>
+
+<audio id="snd"></audio>
+
+<script>
+const $ = id => document.getElementById(id);
+function post(p, d) {
+  return fetch(p, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(d||{}) }).catch(()=>{});
+}
+
+// ── WebSocket mouse ──
+let ws, wsOk = false;
+(function conn() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen  = () => wsOk = true;
+  ws.onclose = () => { wsOk = false; setTimeout(conn, 1500); };
+  ws.onerror = () => wsOk = false;
+}());
+function msend(d) { wsOk && ws.readyState===1 ? ws.send(JSON.stringify(d)) : post("/mouse",d); }
+function mb(b,a) { msend({btn:b,action:a}); }
+
+// ── Drawers + swipe-to-close ──
+let curDrw = null;
+function drw(name) {
+  if (curDrw === name) { closeDrw(); return; }
+  closeDrw();
+  curDrw = name;
+  $("d-"+name).classList.add("open");
+  $("bd").classList.add("show");
+  document.querySelectorAll(".tb").forEach(b=>b.classList.remove("open"));
+  $("tbtn-"+name).classList.add("open");
+  if (name==="prompt") setTimeout(()=>$("pi").focus(),150);
+  if (name==="yt")     setTimeout(()=>$("ytu").focus(),150);
+  if (name==="git")    gitOnOpen();
+}
+function closeDrw() {
+  if (curDrw) { $("d-"+curDrw).classList.remove("open"); curDrw=null; }
+  $("bd").classList.remove("show");
+  document.querySelectorAll(".tb").forEach(b=>b.classList.remove("open"));
+}
+
+// Swipe-down to close drawer
+(function() {
+  let sy=0, dragging=false;
+  document.addEventListener("touchstart", e=>{
+    const d = e.target.closest(".drawer.open");
+    if (!d) return;
+    sy = e.touches[0].clientY; dragging = true;
+  }, {passive:true});
+  document.addEventListener("touchmove", e=>{
+    if (!dragging || !curDrw) return;
+    const dy = e.touches[0].clientY - sy;
+    if (dy > 60) { closeDrw(); dragging = false; }
+  }, {passive:true});
+  document.addEventListener("touchend", ()=>{ dragging=false; }, {passive:true});
+})();
+
+// ── Claude SSE ──
+function lc(l) {
+  // Ghost suggestions & status chrome → dim
+  if (/^❯\s+(Try |how |what |run |refactor |create |add |fix |help |explain |show |list |make |write |check |update |delete |find )/i.test(l)) return "ld";
+  if (/⏵⏵|bypass permissions|↑\s*\d+\s*token|·\s*\/effort|high\s*·|·\s*←|shift\+tab|for agents$/.test(l)) return "ld";
+  if (/^\s*─{3,}/.test(l)) return "ld";
+  if (/✗|AutoUpdate|auto.update|update failed|failed to|error:/i.test(l)) return "ld";
+  if (/^[❯>]\s/.test(l))                       return "lp";
+  if (/^[●•]\s/.test(l))                        return "lt";
+  if (/^[⎿↳✔]\s/.test(l))                      return "lr";
+  if (/[✻✢]\s.*\d+s|[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(l))  return "lk";
+  if (/^\s*\d+[.)]\s/.test(l))                  return "lo";
+  if (!l.trim())                                 return "ld";
+  return "lx";
+}
+
+const TR = []; const ML = 800;
+function appendL(inc) {
+  if (!inc.length) return false;
+  let ov=0;
+  for (let o=Math.min(TR.length,inc.length);o>0;o--) {
+    if (TR.slice(-o).every((l,i)=>l===inc[i])){ov=o;break;}
+  }
+  const nl = inc.slice(ov);
+  if (!nl.length) return false;
+  TR.push(...nl);
+  if (TR.length>ML) TR.splice(0,TR.length-ML);
+  return true;
+}
+function renderTR() {
+  $("term").innerHTML = TR.map(l=>{
+    const c=lc(l), e=l.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    return `<span class="${c}">${e}</span>`;
+  }).join("\n");
+}
+
+function updateScrollBtns() {
+  const t=$("term");
+  const atBot = t.scrollHeight-t.scrollTop-t.clientHeight < 60;
+  const atTop = t.scrollTop < 40;
+  $("scroll-dn").classList.toggle("show", !atBot);
+  $("scroll-up").classList.toggle("show", !atTop);
+}
+$("term").addEventListener("scroll", updateScrollBtns, {passive:true});
+
+let lastMode="idle";
+function renderState(s) {
+  const t=$("term");
+  const atBot = t.scrollHeight-t.scrollTop-t.clientHeight < 60;
+  if (appendL(s.preview)) { renderTR(); if(atBot) t.scrollTop=9e9; }
+  updateScrollBtns();
+
+  const dot=$("hdr-dot"), lbl=$("hdr-label"), bar=$("mode-bar");
+  const dc={idle:"",thinking:"thinking",options:"options",yesno:"options",dead:"dead"};
+  const mt={idle:"[ IDLE ]",thinking:"[ WORKING… ]",options:"[ CHOOSE ]",yesno:"[ Y / N ? ]",dead:"[ DEAD — HOLD RST ]"};
+  const mc={idle:"mi",thinking:"mt",options:"mo",yesno:"my",dead:"md"};
+  dot.className   = dc[s.mode]||"";
+  lbl.textContent = s.mode.toUpperCase();
+  bar.textContent = mt[s.mode]||s.mode.toUpperCase();
+  bar.className   = mc[s.mode]||"mi";
+
+  if (s.mode!==lastMode) {
+    if (s.mode==="options"||s.mode==="yesno") navigator.vibrate&&navigator.vibrate([80,40,80]);
+    else if (s.mode==="idle"&&lastMode==="thinking") navigator.vibrate&&navigator.vibrate(100);
+    lastMode=s.mode;
+  }
+  const ob=$("opts"); ob.innerHTML="";
+  if (s.mode==="yesno") {
+    ["Y","N"].forEach(k=>{
+      const b=document.createElement("div"); b.className="ob "+(k==="Y"?"yes":"no");
+      b.textContent=k==="Y"?"[ YES ]":"[ NO ]"; b.onclick=()=>choose(k.toLowerCase());
+      ob.appendChild(b);
+    });
+  } else if (s.mode==="options"&&s.options.length) {
+    s.options.forEach(o=>{
+      const b=document.createElement("div"); b.className="ob num";
+      b.innerHTML=`<span style="font-size:17px;display:block;line-height:1.1">${o.num}</span><span style="font-size:9px;color:#005a28">${o.label.substring(0,22)}</span>`;
+      b.onclick=()=>choose(o.num); ob.appendChild(b);
+    });
+  }
+}
+
+let sseTimeout;
+(function sse() {
+  const es=new EventSource("/claude-state");
+  sseTimeout=setTimeout(()=>$("hdr-label").textContent="TIMEOUT",9000);
+  es.onmessage=e=>{
+    clearTimeout(sseTimeout);
+    sseTimeout=setTimeout(()=>$("hdr-label").textContent="STALE",8000);
+    try{renderState(JSON.parse(e.data));}catch(_){}
+  };
+  es.onerror=()=>{
+    clearTimeout(sseTimeout);
+    $("hdr-dot").className="dead"; $("hdr-label").textContent="LOST";
+    es.close(); setTimeout(sse,3000);
+  };
+}());
+
+// ── Actions ──
+function send(txt) {
+  const inp=$("ci"); txt=txt||inp.value.trim(); if(!txt) return;
+  inp.value=""; post("/prompt",{text:txt});
+}
+function choose(c) { post("/choose",{choice:c}); }
+
+// RST: hold 600ms to fire
+let rstTimer=null;
+function rstArm() {
+  const b=$("rst-btn"); b.classList.add("armed");
+  rstTimer=setTimeout(()=>{
+    post("/claude-restart");
+    $("mode-bar").textContent="[ RESTARTING… ]"; $("mode-bar").className="mt";
+    navigator.vibrate&&navigator.vibrate([50,30,50]);
+    b.classList.remove("armed");
+  }, 600);
+}
+function rstCancel() {
+  clearTimeout(rstTimer); $("rst-btn").classList.remove("armed");
+}
+
+// ── Clipboard paste ──
+function pasteClipboard() {
+  if (navigator.clipboard && navigator.clipboard.readText) {
+    navigator.clipboard.readText().then(t=>{ $("ci").value=t; $("ci").focus(); }).catch(()=>{});
+  }
+}
+
+// ── Font size ──
+let fsSz=12;
+function fsChange(d) {
+  fsSz=Math.max(9,Math.min(18,fsSz+d));
+  document.documentElement.style.setProperty("--term-fs", fsSz+"px");
+}
+
+// ── Volume popup ──
+let volOpen=false;
+function volPopClose() { $("vol-pop-wrap").classList.remove("show"); $("vol-pop").classList.remove("show"); volOpen=false; }
+function volPopToggle() {
+  volOpen=!volOpen;
+  $("vol-pop-wrap").classList.toggle("show",volOpen);
+  $("vol-pop").classList.toggle("show",volOpen);
+  if (volOpen) {
+    // position below sound button
+    const r=$("hbtn-snd").getBoundingClientRect();
+    $("vol-pop").style.top=(r.bottom+4)+"px";
+    $("vol-pop").style.right=(window.innerWidth-r.right)+"px";
+  }
+}
+function volChange(v) {
+  $("vol-label").textContent=v+"%";
+  post("/audio-volume",{vol:parseInt(v)});
+}
+
+// ── Sound ──
+let sndOn=false;
+function sndToggle(){
+  const a=$("snd"), b=$("hbtn-snd");
+  if(sndOn){
+    a.pause(); a.src=""; sndOn=false;
+    b.textContent="🔇"; b.classList.remove("snd");
+    volPopClose();
+  } else {
+    a.src="/audio-stream"; a.play().catch(()=>{});
+    sndOn=true; b.textContent="🔊"; b.classList.add("snd");
+    navigator.vibrate&&navigator.vibrate(25);
+    // hold to open vol popup
+    b.oncontextmenu=e=>{ e.preventDefault(); volPopToggle(); };
+  }
+}
+
+// ── Screen ──
+let scrOn=false, PI_W=1920, PI_H=1080, scrMode_cur="click", scrStreaming=false;
+let scrFpsN=0, scrFpsT=Date.now();
+
+function scrToggle(){
+  post("/screen-toggle").then(r=>r.json()).then(d=>{
+    scrOn=d.enabled;
+    const btn=$("hbtn-scr"), wrap=$("scr-wrap");
+    if(scrOn){
+      btn.textContent="📺 ON"; btn.classList.add("on"); wrap.classList.add("show");
+      fetch("/screen-info").then(r=>r.json()).then(d=>{PI_W=d.w;PI_H=d.h;}).catch(()=>{});
+      if(!scrStreaming){
+        scrStreaming=true;
+        const img=$("scr-img");
+        img.src="/screen-stream?t="+Date.now();
+        img.onload=()=>{
+          scrFpsN++; const now=Date.now();
+          if(now-scrFpsT>=1000){ $("scr-fps").textContent=scrFpsN+" fps"; scrFpsN=0; scrFpsT=now; }
+        };
+        img.onerror=()=>{ scrStreaming=false; };
+      }
+    } else {
+      btn.textContent="📺 OFF"; btn.classList.remove("on"); wrap.classList.remove("show");
+      scrStreaming=false; $("scr-img").src="";
+    }
+  });
+}
+function scrMode(m){ scrMode_cur=m; ["click","drag","right"].forEach(n=>$("sm-"+n).classList.toggle("a",n===m)); }
+function scrScroll(n){ post("/screen-input",{x:0,y:0,type:"scroll",scroll:n}); }
+function scrCoords(t){
+  const img=$("scr-img"), r=img.getBoundingClientRect();
+  const s=Math.min(r.width/PI_W,r.height/PI_H);
+  const ox=(r.width-PI_W*s)/2, oy=(r.height-PI_H*s)/2;
+  return { x:Math.max(0,Math.min(PI_W,Math.round((t.clientX-r.left-ox)/s))), y:Math.max(0,Math.min(PI_H,Math.round((t.clientY-r.top-oy)/s))) };
+}
+function moveCur(x,y){
+  const img=$("scr-img"), r=img.getBoundingClientRect();
+  const s=Math.min(r.width/PI_W,r.height/PI_H);
+  const ox=(r.width-PI_W*s)/2, oy=(r.height-PI_H*s)/2;
+  const c=$("scr-cur"); c.style.display="block";
+  c.style.left=(ox+x*s)+"px"; c.style.top=(oy+y*s)+"px";
+}
+const si=$("scr-img"); let ss=null, sd=false, smt=null;
+si.addEventListener("touchstart",e=>{
+  e.preventDefault(); if(e.touches.length!==1) return;
+  const c=scrCoords(e.touches[0]);
+  ss={...c,t:Date.now(),cx:e.touches[0].clientX,cy:e.touches[0].clientY}; sd=false;
+  if(scrMode_cur==="drag") post("/screen-input",{...c,type:"down"});
+},{passive:false});
+si.addEventListener("touchmove",e=>{
+  e.preventDefault(); if(e.touches.length!==1||!ss) return;
+  const c=scrCoords(e.touches[0]);
+  const dx=e.touches[0].clientX-ss.cx, dy=e.touches[0].clientY-ss.cy;
+  moveCur(c.x,c.y); if(Math.hypot(dx,dy)>8) sd=true;
+  if(scrMode_cur==="drag"&&sd&&!smt){ smt=setTimeout(()=>smt=null,33); post("/screen-input",{...c,type:"move"}); }
+},{passive:false});
+si.addEventListener("touchend",e=>{
+  e.preventDefault(); if(!ss) return;
+  const c=scrCoords(e.changedTouches[0]);
+  if(scrMode_cur==="drag") post("/screen-input",{...c,type:"up"});
+  else if(!sd&&Date.now()-ss.t<250){ post("/screen-input",{...c,type:scrMode_cur==="right"?"rightclick":"click"}); navigator.vibrate&&navigator.vibrate(22); }
+  ss=null; sd=false; setTimeout(()=>$("scr-cur").style.display="none",700);
+},{passive:false});
+
+// ── Touchpad ──
+const pad=$("tp"), hint=$("tp-hint");
+let tch={}, pdx=0, pdy=0, rafId=null, tmoved=false, ttap=null, t2s=0, tscr=0;
+function flushM(){ rafId=null; if(!pdx&&!pdy) return; msend({dx:Math.round(pdx),dy:Math.round(pdy)}); pdx=0; pdy=0; }
+function schedM(){ if(!rafId) rafId=requestAnimationFrame(flushM); }
+pad.addEventListener("touchstart",e=>{
+  e.preventDefault(); hint.style.opacity="0";
+  for(const t of e.changedTouches) tch[t.identifier]={x:t.clientX,y:t.clientY};
+  if(e.touches.length===1){tmoved=false;ttap=setTimeout(()=>ttap=null,240);}
+  if(e.touches.length===2) t2s=Date.now();
+},{passive:false});
+pad.addEventListener("touchmove",e=>{
+  e.preventDefault();
+  if(e.touches.length===1){
+    const t=e.touches[0],p=tch[t.identifier]; if(!p) return;
+    pdx+=(t.clientX-p.x)*2.2; pdy+=(t.clientY-p.y)*2.2; tmoved=true; schedM();
+    tch[t.identifier]={x:t.clientX,y:t.clientY};
+  } else if(e.touches.length===2){
+    const t0=e.touches[0],t1=e.touches[1],p0=tch[t0.identifier],p1=tch[t1.identifier]; if(!p0||!p1) return;
+    tscr+=((t0.clientY-p0.y)+(t1.clientY-p1.y))/2;
+    if(Math.abs(tscr)>=20){ post("/mouse",{scroll:tscr>0?-1:1}); tscr=0; }
+    tch[t0.identifier]={x:t0.clientX,y:t0.clientY}; tch[t1.identifier]={x:t1.clientX,y:t1.clientY}; tmoved=true;
+  }
+},{passive:false});
+pad.addEventListener("touchend",e=>{
+  e.preventDefault();
+  if(!tmoved&&ttap&&e.changedTouches.length===1&&e.touches.length===0) post("/mouse",{btn:"click"});
+  if(e.touches.length===0&&t2s&&Date.now()-t2s<180&&!tmoved){ post("/mouse",{btn:"rightclick"}); t2s=0; }
+  for(const t of e.changedTouches) delete tch[t.identifier];
+  if(e.touches.length===0){tmoved=false;tscr=0;t2s=0;}
+},{passive:false});
+pad.addEventListener("touchcancel",e=>{ for(const t of e.changedTouches) delete tch[t.identifier]; pdx=0;pdy=0; },{passive:false});
+
+// ── Keyboard ──
+const MODS={shift:false,ctrl:false,alt:false};
+document.querySelectorAll(".key[data-key]").forEach(el=>{
+  const k=el.dataset.key, isMod=["shift","ctrl","alt"].includes(k);
+  el.addEventListener("pointerdown",ev=>{
+    ev.preventDefault();
+    if(isMod){
+      MODS[k]=!MODS[k];
+      document.querySelectorAll(`[data-key="${k}"]`).forEach(e=>e.classList.toggle("held",MODS[k]));
+      post("/key",{key:k,action:MODS[k]?"down":"up"});
+    } else {
+      const snap={...MODS};
+      post("/key",{key:k,action:"tap"}).then(()=>{
+        if(snap.shift){MODS.shift=false;document.querySelectorAll('[data-key="shift"]').forEach(e=>e.classList.remove("held"));post("/key",{key:"shift",action:"up"});}
+        if(snap.ctrl) {MODS.ctrl=false; document.querySelectorAll('[data-key="ctrl"]').forEach(e=>e.classList.remove("held")); post("/key",{key:"ctrl",action:"up"});}
+        if(snap.alt)  {MODS.alt=false;  document.querySelectorAll('[data-key="alt"]').forEach(e=>e.classList.remove("held"));  post("/key",{key:"alt",action:"up"});}
+      });
+      el.classList.add("af"); setTimeout(()=>el.classList.remove("af"),75);
+    }
+  });
+});
+
+// Symbol keys → /text endpoint
+document.querySelectorAll(".key[data-char]").forEach(el=>{
+  el.addEventListener("pointerdown",ev=>{
+    ev.preventDefault();
+    post("/text",{text:el.dataset.char});
+    el.classList.add("af"); setTimeout(()=>el.classList.remove("af"),75);
+  });
+});
+
+// ── Prompt drawer ──
+function sendFull() {
+  const txt=$("pi").value.trim(); if(!txt) return;
+  $("pst").textContent="Sending…";
+  post("/prompt",{text:txt}).then(()=>{
+    $("pst").textContent="Sent ✓"; $("pi").value="";
+    setTimeout(()=>$("pst").textContent="",2000); closeDrw();
+  });
+}
+
+// ── YouTube ──
+function ytSend() {
+  const u=$("ytu").value.trim(); if(!u) return;
+  post("/prompt",{text:u}).then(()=>{ $("ytst").textContent="Sent ✓"; setTimeout(()=>$("ytst").textContent="",2000); });
+  navigator.vibrate&&navigator.vibrate(35);
+}
+function ytCmd(tpl) {
+  const u=$("ytu").value.trim();
+  if(!u){$("ytst").textContent="Paste URL first";return;}
+  post("/prompt",{text:tpl.replace("{url}",u)}).then(()=>{ $("ytst").textContent="Sent ✓"; setTimeout(()=>{ $("ytst").textContent=""; closeDrw(); },1200); });
+  navigator.vibrate&&navigator.vibrate(35);
+}
+
+// ── Git dashboard ──
+let _gitLoaded=false, _mdLoaded=false, _gitTab='log';
+
+function gitOnOpen() {
+  if (!_gitLoaded) gitLoad();
+  if (_gitTab==='md' && !_mdLoaded) mdLoad();
+}
+
+function gitTab(t) {
+  _gitTab = t;
+  $("gtab-log").classList.toggle("on", t==="log");
+  $("gtab-md").classList.toggle("on",  t==="md");
+  $("git-log-view").style.display = t==="log" ? "" : "none";
+  $("git-md-view").classList.toggle("show", t==="md");
+  if (t==="md" && !_mdLoaded) mdLoad();
+}
+
+async function gitLoad() {
+  $("git-commits").innerHTML='<div style="color:#1a3a1a;padding:12px;font-family:monospace;font-size:10px;">Loading…</div>';
+  const r = await fetch("/git/log").catch(()=>null);
+  if (!r || !r.ok) { $("git-commits").innerHTML='<div style="color:#e94560;padding:12px;font-size:10px;">Error — is server on Pi?</div>'; return; }
+  const d = await r.json();
+  $("git-branch").textContent = d.branch || "?";
+  const lines = (d.status||"").trim().split("\n").filter(Boolean);
+  $("git-dirty").textContent = lines.length ? lines.length+" changed" : "clean";
+  const el=$("git-commits"); el.innerHTML="";
+  (d.commits||[]).forEach(c=>{
+    const item=document.createElement("div"); item.className="gc";
+    item.innerHTML=`<div class="gc-head"><span class="gc-hash">${c.short}</span><span class="gc-age">${c.age}</span></div><div class="gc-msg">${c.msg.replace(/</g,"&lt;")}</div><pre class="gc-diff" id="gcd-${c.hash}"></pre>`;
+    item.addEventListener("click",async()=>{
+      const open=item.classList.contains("open");
+      if(!open){
+        const pre=$("gcd-"+c.hash);
+        if(!pre.textContent){
+          pre.textContent="Loading…";
+          const dr=await fetch("/git/show/"+c.hash).catch(()=>null);
+          pre.textContent = dr&&dr.ok ? (await dr.json()).detail||"(empty)" : "Error";
+        }
+      }
+      item.classList.toggle("open",!open);
+    });
+    el.appendChild(item);
+  });
+  _gitLoaded=true;
+}
+
+async function gitPull() {
+  const btn=document.querySelector("#git-status-bar .git-act");
+  btn.textContent="↓ …";
+  const r=await fetch("/git/pull",{method:"POST"}).catch(()=>null);
+  btn.textContent="↓ PULL";
+  if(r&&r.ok){
+    const d=await r.json();
+    $("git-dirty").textContent=(d.out||"").split("\n")[0].substring(0,24)||"done";
+    setTimeout(()=>{ _gitLoaded=false; gitLoad(); },1200);
+  }
+}
+
+// CLAUDE.MD editor
+async function mdLoad() {
+  $("md-editor").value="Loading…";
+  const r=await fetch("/file?path=CLAUDE.md").catch(()=>null);
+  if(r&&r.ok){ $("md-editor").value=(await r.json()).content||""; _mdLoaded=true; }
+  else $("md-editor").value="Error loading file";
+}
+
+async function mdSave() {
+  $("md-status").textContent="Saving…";
+  const r=await fetch("/file",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({path:"CLAUDE.md",content:$("md-editor").value})}).catch(()=>null);
+  $("md-status").textContent=r&&r.ok?"Saved ✔":"Error ✗";
+  setTimeout(()=>$("md-status").textContent="",2000);
+}
+
+// ── Cockpit back button ──
+if (new URLSearchParams(location.search).get("cockpit")) {
+  const b = document.createElement("a");
+  b.href = "/"; b.id = "cockpit-back";
+  b.textContent = "← COCKPIT";
+  b.style.cssText = [
+    "position:fixed","top:max(6px,env(safe-area-inset-top))","left:8px",
+    "z-index:9999","font-family:'Courier New',monospace","font-size:9px",
+    "font-weight:800","color:#28285a","text-decoration:none",
+    "background:#06060e","border:1px solid #14142e",
+    "padding:4px 8px","border-radius:4px","letter-spacing:.5px",
+  ].join(";");
+  document.body.appendChild(b);
+}
+
+// ── visualViewport ──
+if(window.visualViewport){
+  window.visualViewport.addEventListener("resize",()=>{
+    const vv=window.visualViewport;
+    const off=Math.max(0,window.innerHeight-vv.height-vv.offsetTop);
+    document.querySelectorAll(".drawer.open").forEach(d=>d.style.paddingBottom=off>0?off+"px":"");
+  });
+}
+</script>
+</body>
+</html>
