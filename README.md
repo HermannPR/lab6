@@ -27,7 +27,7 @@ Biblical AI chatbot. Responds as Jesus Christ drawing from Gospel RAG (retrieval
 - ChatGPT-style chat layout, auto-resize input
 
 **Deploy → Vercel**
-
+https://jesus-gpt.vercel.app/
 See [jesusgpt/DEPLOYMENT.md](./jesusgpt/DEPLOYMENT.md)
 
 ---
